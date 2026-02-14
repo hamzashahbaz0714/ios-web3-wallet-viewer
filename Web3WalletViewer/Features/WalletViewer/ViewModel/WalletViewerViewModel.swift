@@ -10,18 +10,21 @@ import Combine
 
 @MainActor
 final class WalletViewerViewModel: ObservableObject {
-    @Published var address: String = ""
     @Published var selectedChain: Chain = .sepolia
     
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var summary: WalletSummary?
     
+    //0x21D25522519fa04f00D296b6Ba38965c4d864C55 //Account 1
+    @Published var address: String = "0x21D25522519fa04f00D296b6Ba38965c4d864C55" //0x9A7Aee73aBAc219457C8Ee66bdE42Ba5473A8c0a
+
     private let service: WalletViewerServiceProtocol
     
-    init(service: WalletViewerServiceProtocol = MockWalletViewerService()) {
+    init(service: WalletViewerServiceProtocol = WalletViewerService()) {
         self.service = service
     }
+
     
     func loadWallet() async {
         errorMessage = nil

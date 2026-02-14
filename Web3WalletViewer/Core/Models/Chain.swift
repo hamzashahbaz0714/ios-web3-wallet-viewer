@@ -10,22 +10,23 @@ import Foundation
 enum Chain: String, CaseIterable, Identifiable {
     case ethereumMainnet = "Ethereum Mainnet"
     case sepolia = "Sepolia Testnet"
-    
+
     var id: String { rawValue }
-    
+
     var symbol: String {
         switch self {
-        case .ethereumMainnet, .sepolia:
-            return "ETH"
+        case .ethereumMainnet, .sepolia: return "ETH"
         }
     }
-    
+
     var rpcURL: URL {
         switch self {
         case .ethereumMainnet:
-            return URL(string: "https://cloudflare-eth.com")!
+            // Public + stable for demo
+            return URL(string: "https://ethereum.publicnode.com")!
         case .sepolia:
-            return URL(string: "https://rpc.sepolia.org")!
+            // Public sepolia endpoint
+            return URL(string: "https://ethereum-sepolia.publicnode.com")!
         }
     }
 }
