@@ -22,11 +22,16 @@ enum Chain: String, CaseIterable, Identifiable {
     var rpcURL: URL {
         switch self {
         case .ethereumMainnet:
-            // Public + stable for demo
             return URL(string: "https://ethereum.publicnode.com")!
         case .sepolia:
-            // Public sepolia endpoint
             return URL(string: "https://ethereum-sepolia.publicnode.com")!
+        }
+    }
+
+    var covalentChainId: String {
+        switch self {
+        case .ethereumMainnet: return "1"
+        case .sepolia: return "11155111"
         }
     }
 }

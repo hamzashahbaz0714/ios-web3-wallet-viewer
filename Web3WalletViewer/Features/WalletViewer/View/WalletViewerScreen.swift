@@ -21,6 +21,18 @@ private enum WalletTheme {
     static let validGreen = Color(red: 0.20, green: 0.78, blue: 0.45)
     static let invalidRed = Color(red: 0.94, green: 0.33, blue: 0.31)
 
+    // Token color palette (static — never reallocated)
+    static let tokenPalette: [Color] = [
+        accentPrimary,
+        accentTertiary,
+        accentSecondary,
+        Color(red: 0.96, green: 0.45, blue: 0.45),
+        Color(red: 0.95, green: 0.72, blue: 0.20),
+        Color(red: 0.35, green: 0.78, blue: 0.95),
+        Color(red: 0.92, green: 0.42, blue: 0.68),
+        Color(red: 0.58, green: 0.82, blue: 0.28)
+    ]
+
     // Radii
     static let cardRadius: CGFloat = 20
     static let innerRadius: CGFloat = 14
@@ -30,6 +42,42 @@ private enum WalletTheme {
     static let cardPadding: CGFloat = 18
     static let sectionSpacing: CGFloat = 18
 }
+
+// MARK: - Known Token Names (file-level static, allocated once)
+
+private let knownTokenNames: [String: String] = [
+    "USDT": "Tether USD",
+    "USDC": "USD Coin",
+    "DAI": "Dai Stablecoin",
+    "WETH": "Wrapped Ether",
+    "WBTC": "Wrapped Bitcoin",
+    "UNI": "Uniswap",
+    "LINK": "Chainlink",
+    "AAVE": "Aave",
+    "CRV": "Curve DAO",
+    "MATIC": "Polygon",
+    "SHIB": "Shiba Inu",
+    "APE": "ApeCoin",
+    "LDO": "Lido DAO",
+    "ARB": "Arbitrum",
+    "OP": "Optimism",
+    "MKR": "Maker",
+    "SNX": "Synthetix",
+    "COMP": "Compound",
+    "GRT": "The Graph",
+    "FTM": "Fantom",
+    "SAND": "The Sandbox",
+    "MANA": "Decentraland",
+    "SUSHI": "SushiSwap",
+    "1INCH": "1inch Network",
+    "ENS": "Ethereum Name Service",
+    "RPL": "Rocket Pool",
+    "PEPE": "Pepe",
+    "BLUR": "Blur",
+    "DYDX": "dYdX",
+    "BAL": "Balancer",
+    "FRAX": "Frax",
+]
 
 // MARK: - Address Validation
 
@@ -89,6 +137,75 @@ private enum Haptics {
     }
 }
 
+// MARK: - Token Row View (Extracted struct — isolated re-renders)
+
+private struct TokenRowView: View {
+    let token: TokenHolding
+    let color: Color
+    let isLast: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                // Token avatar
+                ZStack {
+                    Circle()
+                        .fill(color.opacity(0.14))
+                        .frame(width: 40, height: 40)
+
+                    Circle()
+                        .fill(color.opacity(0.22))
+                        .frame(width: 32, height: 32)
+
+                    Text(String(token.symbol.prefix(1)))
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(color)
+                }
+                .accessibilityHidden(true)
+
+                // Token info
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(token.symbol)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+
+                    Text(knownTokenNames[token.symbol.uppercased()] ?? "ERC-20 Token")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(.black)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+
+                // Amount
+                Text(token.amount)
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color(.tertiarySystemBackground).opacity(0.5))
+            )
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(token.symbol): \(token.amount)")
+
+            if !isLast {
+                Rectangle()
+                    .fill(Color(.separator).opacity(0.12))
+                    .frame(height: 0.5)
+                    .padding(.leading, 52)
+                    .padding(.vertical, 2)
+            }
+        }
+    }
+}
+
+// MARK: - Main Screen
+
 struct WalletViewerScreen: View {
     @StateObject private var vm = WalletViewerViewModel()
     @State private var appeared = false
@@ -106,7 +223,6 @@ struct WalletViewerScreen: View {
                 backgroundGradient
                 scrollContent
 
-                // Copied toast overlay
                 if copiedToast {
                     VStack {
                         Spacer()
@@ -200,12 +316,19 @@ struct WalletViewerScreen: View {
                     summaryCard(summary)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
 
-                    tokensCard(summary.tokens)
+                    tokensCard
                         .transition(.move(edge: .bottom).combined(with: .opacity))
+                    
                 } else {
                     emptyStateCard
                         .cardEntrance(index: 2, appeared: appeared)
                 }
+                if vm.isLoadingTransactions {
+                    txLoadingCard
+                } else {
+                    transactionsCard(vm.transactions)
+                }
+
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -280,7 +403,6 @@ struct WalletViewerScreen: View {
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(.primary)
 
-            // Address field
             VStack(alignment: .leading, spacing: 6) {
                 Text("Wallet Address")
                     .font(.system(size: 13, weight: .medium))
@@ -288,7 +410,6 @@ struct WalletViewerScreen: View {
                     .textCase(.uppercase)
                     .kerning(0.5)
 
-                // Text field with paste button
                 HStack(spacing: 0) {
                     TextField("0x...", text: $vm.address)
                         .textInputAutocapitalization(.never)
@@ -302,7 +423,6 @@ struct WalletViewerScreen: View {
                         .padding(.leading, 14)
                         .padding(.vertical, 13)
 
-                    // Paste from clipboard button
                     Button {
                         if let clipboardString = UIPasteboard.general.string {
                             vm.address = clipboardString
@@ -329,16 +449,13 @@ struct WalletViewerScreen: View {
                 )
                 .animation(.easeInOut(duration: 0.2), value: vm.address)
 
-                // Validation hint or default tip
                 addressHintView
             }
 
-            // Recent addresses
             if !vm.recentAddresses.isEmpty {
                 recentAddressesSection
             }
 
-            // Network picker
             VStack(alignment: .leading, spacing: 8) {
                 Text("Network")
                     .font(.system(size: 13, weight: .medium))
@@ -354,7 +471,6 @@ struct WalletViewerScreen: View {
                 .pickerStyle(.segmented)
             }
 
-            // Load button
             loadButton
         }
         .padding(WalletTheme.cardPadding)
@@ -615,7 +731,6 @@ struct WalletViewerScreen: View {
                     .foregroundStyle(WalletTheme.accentPrimary)
             }
 
-            // Address row with copy
             VStack(alignment: .leading, spacing: 8) {
                 infoRow("Address", summary.address, monospaced: true)
                 Button {
@@ -645,7 +760,6 @@ struct WalletViewerScreen: View {
             infoRow("Chain", summary.chain.rawValue)
             divider
 
-            // Balance with emphasis
             HStack(alignment: .firstTextBaseline) {
                 Text("Balance")
                     .foregroundStyle(.secondary)
@@ -667,91 +781,133 @@ struct WalletViewerScreen: View {
         .glassCard()
     }
 
-    // MARK: - Tokens Card
+    // MARK: - Tokens Card (Paginated)
 
-    private func tokensCard(_ tokens: [TokenBalance]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Text("Tokens")
-                    .font(.system(size: 17, weight: .semibold))
+    private var tokensCard: some View {
+        let tokens = vm.visibleTokens
+
+        return VStack(alignment: .leading, spacing: 16) {
+            // Header — shows total count, not just visible
+            HStack(alignment: .center) {
+                HStack(spacing: 8) {
+                    Image(systemName: "circle.grid.2x2.fill")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [WalletTheme.accentPrimary, WalletTheme.accentSecondary],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    Text("Tokens")
+                        .font(.system(size: 17, weight: .semibold))
+                }
                 Spacer()
-                Text("\(tokens.count)")
+
+                // Badge shows "visible / total"
+                Text(vm.hasMoreTokens ? "\(tokens.count)/\(vm.totalTokenCount)" : "\(vm.totalTokenCount)")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
+                    .foregroundStyle(WalletTheme.accentPrimary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
                     .background(
                         Capsule()
-                            .fill(Color(.tertiarySystemFill))
+                            .fill(
+                                LinearGradient(
+                                    colors: [
+                                        WalletTheme.accentPrimary.opacity(0.10),
+                                        WalletTheme.accentSecondary.opacity(0.06)
+                                    ],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
                     )
+                    .overlay(
+                        Capsule()
+                            .stroke(WalletTheme.accentPrimary.opacity(0.12), lineWidth: 0.5)
+                    )
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.2), value: tokens.count)
             }
 
             if tokens.isEmpty {
-                HStack {
-                    Spacer()
-                    VStack(spacing: 6) {
+                VStack(spacing: 10) {
+                    ZStack {
+                        Circle()
+                            .fill(WalletTheme.accentPrimary.opacity(0.06))
+                            .frame(width: 52, height: 52)
+
                         Image(systemName: "tray")
-                            .font(.system(size: 20))
-                            .foregroundStyle(.quaternary)
-                        Text("No tokens found")
-                            .foregroundStyle(.secondary)
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundStyle(WalletTheme.accentPrimary.opacity(0.35))
                     }
-                    .padding(.vertical, 12)
-                    Spacer()
+
+                    Text("No tokens found")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 14, weight: .medium))
+
+                    Text("This wallet doesn't hold any ERC-20 tokens")
+                        .foregroundStyle(.quaternary)
+                        .font(.system(size: 12))
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 20)
             } else {
-                VStack(spacing: 6) {
-                    ForEach(Array(tokens.enumerated()), id: \.element.id) { index, token in
-                        tokenRow(token, index: index)
+                // Paginated token list
+                VStack(spacing: 4) {
+                    ForEach(tokens) { token in
+                        let idx = tokens.firstIndex(where: { $0.id == token.id }) ?? 0
+                        let isLastVisible = token.id == tokens.last?.id
+                        let isActuallyLast = isLastVisible && !vm.hasMoreTokens
+
+                        TokenRowView(
+                            token: token,
+                            color: WalletTheme.tokenPalette[idx % WalletTheme.tokenPalette.count],
+                            isLast: isActuallyLast
+                        )
                     }
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: tokens.count)
+
+                // Show More button
+                if vm.hasMoreTokens {
+                    let remaining = vm.totalTokenCount - tokens.count
+
+                    Button {
+                        Haptics.impact(.light)
+                        vm.loadMoreTokens()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 14, weight: .medium))
+                            Text("Show More")
+                                .font(.system(size: 14, weight: .semibold))
+                            Text("(\(remaining) remaining)")
+                                .font(.system(size: 12, weight: .regular))
+                                .foregroundStyle(.secondary)
+                        }
+                        .foregroundStyle(WalletTheme.accentPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: WalletTheme.innerRadius, style: .continuous)
+                                .fill(WalletTheme.accentPrimary.opacity(0.06))
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: WalletTheme.innerRadius, style: .continuous)
+                                .stroke(WalletTheme.accentPrimary.opacity(0.12), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .accessibilityLabel("Show \(remaining) more tokens")
                 }
             }
         }
         .padding(WalletTheme.cardPadding)
         .glassCard()
-    }
-
-    private func tokenRow(_ token: TokenBalance, index: Int) -> some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                tokenColor(for: index).opacity(0.18),
-                                tokenColor(for: index).opacity(0.08)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 36, height: 36)
-
-                Text(String(token.symbol.prefix(1)))
-                    .font(.system(size: 14, weight: .bold, design: .rounded))
-                    .foregroundStyle(tokenColor(for: index))
-            }
-            .accessibilityHidden(true)
-
-            Text(token.symbol)
-                .font(.system(size: 15, weight: .semibold))
-
-            Spacer()
-
-            Text(token.amount)
-                .font(.system(size: 14, weight: .medium, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .contentTransition(.numericText())
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(.tertiarySystemBackground))
-        )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(token.symbol): \(token.amount)")
     }
 
     // MARK: - Empty State
@@ -823,23 +979,86 @@ struct WalletViewerScreen: View {
         return "\(start)...\(end)"
     }
 
-    private func tokenColor(for index: Int) -> Color {
-        let palette: [Color] = [
-            WalletTheme.accentPrimary,
-            WalletTheme.accentTertiary,
-            WalletTheme.accentSecondary,
-            Color(red: 0.96, green: 0.45, blue: 0.45),
-            Color(red: 0.95, green: 0.72, blue: 0.20)
-        ]
-        return palette[index % palette.count]
-    }
-
     private func showCopiedToast() {
         copiedToast = true
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
             copiedToast = false
         }
     }
+    
+    private func transactionsCard(_ items: [WalletTransaction]) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Recent Transactions")
+                    .font(.system(size: 17, weight: .semibold))
+                Spacer()
+                Text("\(items.count)")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+            }
+
+            if items.isEmpty {
+                Text("No recent transactions found")
+                    .foregroundStyle(.secondary)
+                    .font(.system(size: 14, weight: .medium))
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, tx in
+                        txRow(tx, index: index)
+                    }
+                }
+            }
+        }
+        .padding(WalletTheme.cardPadding)
+        .glassCard()
+    }
+    
+    private func txRow(_ tx: WalletTransaction, index: Int) -> some View {
+        VStack(spacing: 8) {
+            HStack {
+                Image(systemName: tx.isIncoming ? "arrow.down.left.circle.fill" : "arrow.up.right.circle.fill")
+                    .foregroundStyle(tx.isIncoming ? .green : .orange)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tx.isIncoming ? "Incoming" : "Outgoing")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text(tx.hash)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Text(tx.value)
+                    .font(.system(size: 13, weight: .medium))
+            }
+
+            if index < (vm.transactions.count - 1) {
+                Divider().opacity(0.35)
+            }
+        }
+    }
+
+    private var txLoadingCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Recent Transactions")
+                .font(.system(size: 17, weight: .semibold))
+            ForEach(0..<4, id: \.self) { _ in
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color(.tertiarySystemFill))
+                    .frame(height: 34)
+            }
+        }
+        .padding(WalletTheme.cardPadding)
+        .glassCard()
+    }
+
+
 }
 
 // MARK: - Glass Card Modifier

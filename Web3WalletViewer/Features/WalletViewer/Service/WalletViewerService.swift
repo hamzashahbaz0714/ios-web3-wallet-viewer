@@ -26,19 +26,24 @@ enum WalletViewerServiceError: LocalizedError {
 
 final class WalletViewerService: WalletViewerServiceProtocol {
     private let rpcClient: RPCClientProtocol
+    private let tokenService: TokenBalanceServiceProtocol
 
-    init(rpcClient: RPCClientProtocol = RPCClient()) {
+    init(
+        rpcClient: RPCClientProtocol = RPCClient(),
+        tokenService: TokenBalanceServiceProtocol = TokenBalanceService()
+    ) {
         self.rpcClient = rpcClient
+        self.tokenService = tokenService
     }
 
     func fetchWalletSummary(address: String, chain: Chain) async throws -> WalletSummary {
-        let trimmedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard EthereumAddressValidator.isValid(trimmedAddress) else {
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard EthereumAddressValidator.isValid(trimmed) else {
             throw WalletViewerServiceError.invalidAddress
         }
 
-        // eth_getBalance params: [address, "latest"]
-        let params = [trimmedAddress, "latest"]
+        // 1) Native balance (required)
+        let params = [trimmed, "latest"]
         let hexWei: String = try await rpcClient.call(
             url: chain.rpcURL,
             method: "eth_getBalance",
@@ -49,14 +54,17 @@ final class WalletViewerService: WalletViewerServiceProtocol {
             throw WalletViewerServiceError.invalidBalanceFormat
         }
 
-        let tokens = [
-            TokenBalance(symbol: "USDC", amount: "--"),
-            TokenBalance(symbol: "UNI", amount: "--"),
-            TokenBalance(symbol: "LINK", amount: "--")
-        ]
+        // 2) Token balances (best-effort, non-blocking failure)
+        let tokens: [TokenHolding]
+        do {
+            tokens = try await tokenService.fetchTokenBalances(address: trimmed, chain: chain)
+        } catch {
+            print("Token fetch failed (continuing with native only): \(error.localizedDescription)")
+            tokens = []
+        }
 
         return WalletSummary(
-            address: trimmedAddress,
+            address: trimmed,
             chain: chain,
             nativeBalance: "\(eth) \(chain.symbol)",
             tokens: tokens

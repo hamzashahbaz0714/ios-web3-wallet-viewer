@@ -6,13 +6,15 @@
 //
 
 import Foundation
+import Foundation
 
-struct WalletSummary {
+struct WalletSummary: Equatable {
     let address: String
     let chain: Chain
     let nativeBalance: String
-    let tokens: [TokenBalance]
+    let tokens: [TokenHolding]
 }
+
 
 struct TokenBalance: Identifiable {
     let id = UUID()
