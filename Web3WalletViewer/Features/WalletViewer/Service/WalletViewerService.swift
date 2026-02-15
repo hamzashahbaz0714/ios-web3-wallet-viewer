@@ -32,13 +32,13 @@ final class WalletViewerService: WalletViewerServiceProtocol {
     }
 
     func fetchWalletSummary(address: String, chain: Chain) async throws -> WalletSummary {
-        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard EthereumAddressValidator.isValid(trimmed) else {
+        let trimmedAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard EthereumAddressValidator.isValid(trimmedAddress) else {
             throw WalletViewerServiceError.invalidAddress
         }
 
         // eth_getBalance params: [address, "latest"]
-        let params = [trimmed, "latest"]
+        let params = [trimmedAddress, "latest"]
         let hexWei: String = try await rpcClient.call(
             url: chain.rpcURL,
             method: "eth_getBalance",
@@ -49,7 +49,6 @@ final class WalletViewerService: WalletViewerServiceProtocol {
             throw WalletViewerServiceError.invalidBalanceFormat
         }
 
-        // Keep token list mock for now (Day 3+ can replace with real token API/indexer)
         let tokens = [
             TokenBalance(symbol: "USDC", amount: "--"),
             TokenBalance(symbol: "UNI", amount: "--"),
@@ -57,7 +56,7 @@ final class WalletViewerService: WalletViewerServiceProtocol {
         ]
 
         return WalletSummary(
-            address: trimmed,
+            address: trimmedAddress,
             chain: chain,
             nativeBalance: "\(eth) \(chain.symbol)",
             tokens: tokens

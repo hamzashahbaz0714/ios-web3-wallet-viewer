@@ -10,38 +10,54 @@ import Combine
 
 @MainActor
 final class WalletViewerViewModel: ObservableObject {
+    @Published var address: String = "0x21D25522519fa04f00D296b6Ba38965c4d864C55"
     @Published var selectedChain: Chain = .sepolia
-    
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var summary: WalletSummary?
-    
-    //0x21D25522519fa04f00D296b6Ba38965c4d864C55 //Account 1
-    @Published var address: String = "0x21D25522519fa04f00D296b6Ba38965c4d864C55" //0x9A7Aee73aBAc219457C8Ee66bdE42Ba5473A8c0a
+    @Published var recentAddresses: [String] = []
 
     private let service: WalletViewerServiceProtocol
-    
-    init(service: WalletViewerServiceProtocol = WalletViewerService()) {
+    private let recentStore: RecentWalletStoreProtocol
+
+    init(
+        service: WalletViewerServiceProtocol = WalletViewerService(),
+        recentStore: RecentWalletStoreProtocol = RecentWalletStore()
+    ) {
         self.service = service
+        self.recentStore = recentStore
+        self.recentAddresses = recentStore.fetch()
     }
 
-    
     func loadWallet() async {
         errorMessage = nil
         summary = nil
-        
-        guard EthereumAddressValidator.isValid(address) else {
+
+        let trimmed = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard EthereumAddressValidator.isValid(trimmed) else {
             errorMessage = "Invalid wallet address. Must start with 0x and be 42 characters."
             return
         }
-        
+
         isLoading = true
         defer { isLoading = false }
-        
+
         do {
-            summary = try await service.fetchWalletSummary(address: address, chain: selectedChain)
+            summary = try await service.fetchWalletSummary(address: trimmed, chain: selectedChain)
+            recentStore.save(address: trimmed)
+            recentAddresses = recentStore.fetch()
         } catch {
             errorMessage = error.localizedDescription
+            print("Wallet load error:", error.localizedDescription)
         }
+    }
+
+    func selectRecent(_ value: String) {
+        address = value
+    }
+
+    func clearRecent() {
+        recentStore.clear()
+        recentAddresses = []
     }
 }
