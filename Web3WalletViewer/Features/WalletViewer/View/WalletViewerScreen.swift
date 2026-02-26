@@ -213,6 +213,9 @@ struct WalletViewerScreen: View {
     @State private var loadButtonPressed = false
     @FocusState private var addressFieldFocused: Bool
 
+    @State private var walletToDelete: SavedWallet?
+    @State private var showDeleteAlert = false
+    
     private var addressValidation: AddressValidation {
         AddressValidation.validate(vm.address)
     }
@@ -236,6 +239,13 @@ struct WalletViewerScreen: View {
             .navigationTitle("Wallet Viewer")
             .navigationBarTitleDisplayMode(.large)
             .animation(.spring(response: 0.35, dampingFraction: 0.8), value: copiedToast)
+            .sheet(item: $vm.editingWallet) { wallet in
+                editWalletSheet(wallet: wallet)
+            }
+            .sheet(isPresented: $vm.showSaveSheet) {
+                saveWalletSheet
+            }
+
         }
     }
 
@@ -301,6 +311,9 @@ struct WalletViewerScreen: View {
                 inputCard
                     .cardEntrance(index: 1, appeared: appeared)
 
+                savedWalletsCard
+                    .cardEntrance(index: 2, appeared: appeared)
+
                 if let error = vm.errorMessage {
                     errorCard(error)
                         .transition(.asymmetric(
@@ -342,6 +355,7 @@ struct WalletViewerScreen: View {
         .refreshable {
             guard vm.summary != nil else { return }
             Haptics.impact(.light)
+            
             await vm.loadWallet()
         }
         .onAppear {
@@ -382,7 +396,7 @@ struct WalletViewerScreen: View {
             .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text("Read-only Dashboard")
+                Text("Welcome to BitKeep")
                     .font(.system(size: 17, weight: .semibold, design: .default))
                 Text("Track balances safely — no private keys needed.")
                     .font(.system(size: 14, weight: .regular))
@@ -471,7 +485,7 @@ struct WalletViewerScreen: View {
                 .pickerStyle(.segmented)
             }
 
-            loadButton
+            actionButtons
         }
         .padding(WalletTheme.cardPadding)
         .glassCard()
@@ -573,56 +587,285 @@ struct WalletViewerScreen: View {
         }
     }
 
-    private var loadButton: some View {
-        let isDisabled = vm.isLoading || vm.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    
+    private var actionButtons: some View {
+        HStack(spacing: 10) {
+            Button {
+                Haptics.impact(.light)
+                vm.saveLabelInput = ""
+                vm.showSaveSheet = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "bookmark.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                    Text("Save")
+                        .font(.system(size: 15, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    RoundedRectangle(cornerRadius: WalletTheme.innerRadius, style: .continuous)
+                        .fill(Color(.secondarySystemBackground))
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(vm.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
-        return Button {
-            Haptics.impact(.medium)
-            addressFieldFocused = false
-            Task { await vm.loadWallet() }
-        } label: {
-            HStack(spacing: 8) {
-                if vm.isLoading {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(.white)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.system(size: 14, weight: .semibold))
+            loadButton
+        }
+    }
+
+    private var savedWalletsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("Saved Wallets", systemImage: "bookmark.circle")
+                    .font(.system(size: 17, weight: .semibold))
+                Spacer()
+                Text("\(vm.savedWallets.count)")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(Color(.tertiarySystemFill)))
+            }
+
+            TextField("Search by label or address", text: $vm.walletSearchQuery)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled(true)
+                .font(.system(size: 14))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color(.tertiarySystemBackground))
+                )
+
+            if vm.displayedSavedWallets.isEmpty {
+                Text("No saved wallets yet")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 4)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(vm.displayedSavedWallets) { wallet in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(wallet.label)
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text(wallet.address)
+                                    .font(.system(size: 11, weight: .regular, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Text(wallet.chain.rawValue)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(.tertiary)
+                            }
+
+                            Spacer()
+
+                            Button {
+                                Haptics.selection()
+                                vm.selectSavedWallet(wallet)
+                                if vm.autoLoadSavedWalletOnSelect {
+                                    Task { await vm.loadWallet() }
+                                }
+                                if vm.autoLoadSavedWalletOnSelect {
+                                    Task { await vm.loadWallet() }
+                                }
+                            } label: {
+                                Image(systemName: "arrow.down.left.circle")
+                                    .font(.system(size: 18, weight: .semibold))
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                vm.toggleFavorite(wallet)
+                            } label: {
+                                Image(systemName: wallet.isFavorite ? "star.fill" : "star")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(wallet.isFavorite ? .yellow : .secondary)
+                            }
+                            .buttonStyle(.plain)
+
+                            Menu {
+                                Button("Edit") { vm.beginEdit(wallet) }
+                                Button("Copy Address") { vm.copyAddress(wallet) }
+                                if let url = vm.explorerURL(for: wallet) {
+                                    showCopiedToast()
+                                    Link("Open Explorer", destination: url)
+                                }
+                                Button(role: .destructive) {
+                                    walletToDelete = wallet
+                                    showDeleteAlert = true
+
+                                } label: {
+                                    Text("Delete")
+                                }
+                            } label: {
+                                Image(systemName: "ellipsis.circle")
+                                    .font(.system(size: 18, weight: .semibold))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .alert("Delete Saved Wallet?", isPresented: $showDeleteAlert, presenting: walletToDelete) { wallet in
+                            Button("Delete", role: .destructive) {
+                                vm.deleteSavedWallet(wallet)
+                                walletToDelete = nil
+                            }
+                            Button("Cancel", role: .cancel) {
+                                walletToDelete = nil
+                            }
+                        } message: { wallet in
+                            Text("Are you sure you want to remove \"\(wallet.label)\" from saved wallets?")
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(Color(.secondarySystemBackground).opacity(0.7))
+                        )
+                    }
+                }
+            }
+        }
+        .padding(WalletTheme.cardPadding)
+        .glassCard()
+    }
+
+    
+    private var editWalletSheet: some View {
+        NavigationStack {
+            Form {
+                Section("Edit wallet") {
+                    TextField("Label", text: $vm.editLabelInput)
+                    TextField("Notes", text: $vm.editNotesInput, axis: .vertical)
+                        .lineLimit(2...4)
+                }
+            }
+            .navigationTitle("Edit Wallet")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        vm.cancelEdit()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") { vm.saveEdit() }
+                }
+            }
+        }
+    }
+
+    private func editWalletSheet(wallet: SavedWallet) -> some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Wallet")) {
+                    Text(wallet.address)
+                        .font(.system(.footnote, design: .monospaced))
+                        .textSelection(.enabled)
                 }
 
-                Text(vm.isLoading ? "Loading..." : "Load Wallet")
-                    .font(.system(size: 16, weight: .semibold))
+                Section(header: Text("Edit Details")) {
+                    TextField("Label", text: $vm.editLabelInput)
+                    TextField("Notes", text: $vm.editNotesInput, axis: .vertical)
+                        .lineLimit(3...6)
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(
-                LinearGradient(
-                    colors: [
-                        WalletTheme.accentPrimary,
-                        WalletTheme.accentSecondary.opacity(0.85)
-                    ],
-                    startPoint: .leading,
-                    endPoint: .trailing
-                )
-            )
-            .foregroundStyle(.white)
-            .clipShape(RoundedRectangle(cornerRadius: WalletTheme.innerRadius, style: .continuous))
-            .shadow(color: WalletTheme.accentPrimary.opacity(isDisabled ? 0 : 0.3), radius: 12, y: 6)
+            .navigationTitle("Edit Wallet")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        vm.cancelEdit()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        vm.saveEdit()
+                    }
+                    .disabled(vm.editLabelInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
         }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-        .opacity(isDisabled ? 0.55 : 1.0)
-        .scaleEffect(loadButtonPressed ? 0.97 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: loadButtonPressed)
-        .animation(.easeInOut(duration: 0.2), value: vm.isLoading)
-        .simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { _ in loadButtonPressed = true }
-                .onEnded { _ in loadButtonPressed = false }
-        )
-        .accessibilityLabel(vm.isLoading ? "Loading wallet" : "Load wallet")
     }
+
+    
+    private var saveWalletSheet: some View {
+            NavigationStack {
+                Form {
+                    Section("Save current wallet") {
+                        TextField("e.g. Main Wallet", text: $vm.saveLabelInput)
+                        Text(vm.address)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Text(vm.selectedChain.rawValue)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .navigationTitle("Save Wallet")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { vm.showSaveSheet = false }
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") { vm.saveCurrentWallet() }
+                    }
+                }
+            }
+        }
+
+    private var loadButton: some View {
+            let isDisabled = vm.isLoading || vm.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+            return Button {
+                Haptics.impact(.medium)
+                addressFieldFocused = false
+                Task { await vm.loadWallet() }
+            } label: {
+                HStack(spacing: 8) {
+                    if vm.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    } else {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+
+                    Text(vm.isLoading ? "Loading..." : "Load Wallet")
+                        .font(.system(size: 16, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            WalletTheme.accentPrimary,
+                            WalletTheme.accentSecondary.opacity(0.85)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: WalletTheme.innerRadius, style: .continuous))
+                .shadow(color: WalletTheme.accentPrimary.opacity(isDisabled ? 0 : 0.3), radius: 12, y: 6)
+            }
+            .buttonStyle(.plain)
+            .disabled(isDisabled)
+            .opacity(isDisabled ? 0.55 : 1.0)
+            .scaleEffect(loadButtonPressed ? 0.97 : 1.0)
+            .animation(.easeInOut(duration: 0.15), value: loadButtonPressed)
+            .animation(.easeInOut(duration: 0.2), value: vm.isLoading)
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { _ in loadButtonPressed = true }
+                    .onEnded { _ in loadButtonPressed = false }
+            )
+            .accessibilityLabel(vm.isLoading ? "Loading wallet" : "Load wallet")
+        }
 
     // MARK: - Shimmer Loading Card
 
@@ -1146,3 +1389,4 @@ private struct ShimmerView: View {
 #Preview {
     WalletViewerScreen()
 }
+

@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum Chain: String, CaseIterable, Identifiable {
+enum Chain: String, CaseIterable, Identifiable, Codable {
     case ethereumMainnet = "Ethereum Mainnet"
     case sepolia = "Sepolia Testnet"
 
@@ -35,3 +35,4 @@ enum Chain: String, CaseIterable, Identifiable {
         }
     }
 }
+
