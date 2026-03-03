@@ -9,5 +9,5 @@ import Foundation
 
 enum AppSecrets {
     // Replace with your key
-    static let covalentAPIKey = "cqt_rQMBGgTGcJM6xF6XPY4vwxHCrV7y"
+    static let covalentAPIKey = "API_KEY" //You can sign up on https://goldrush.dev/platform/apikey/
 }
